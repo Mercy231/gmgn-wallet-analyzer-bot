@@ -22,13 +22,24 @@ if (!process.env.ZENROWS_API_KEY) {
 export interface MySession extends Scenes.SceneSession {
     isActive?: boolean;
     walletAddress?: string;
+    mainMsg?: Message.TextMessage;
+    changeWalletMsg?: Message.TextMessage;
+    total_profit?: {
+        tokens?: GmgnWalletToken[];
+        firstAddress?: string;
+        firstIndex?: number;
+        secondAddress?: string;
+        secondIndex?: number;
+        apiCursor?: string;
+        sceneMsg?: Message.TextMessage;
+    };
+
+    // Old "Get_total_profit"
     tokens?: GmgnWalletToken[]
     tokensPage?: number; 
     apiCursor?: string; 
     firstSelectedTokenIndex?: number;
     secondSelectedTokenIndex?: number;
-    mainMsg?: Message.TextMessage;
-    changeWalletMsg?: Message.TextMessage;
 };
 
 export interface MyContext extends Context {
@@ -57,7 +68,7 @@ class TelegramService {
             );
         });
         changeWalletScene.on("message", async (ctx) => {
-            await ctx.deleteMessage(ctx.message.message_id);
+            try { await ctx.deleteMessage(ctx.message.message_id); } catch (_) {}
 
             if (ctx.text && ctx.text.startsWith("/")) {           
                 await ctx.scene.leave();
@@ -71,7 +82,7 @@ class TelegramService {
             if (ctx.text === ctx.session.walletAddress) {
                 try {
                     await ctx.deleteMessage(ctx.session.changeWalletMsg?.message_id);
-                } finally {
+                } catch(_) {} finally {
                     ctx.session.changeWalletMsg = await ctx.reply(
                         "<b>This address is already connected. Try again</b>",
                         {
@@ -87,7 +98,7 @@ class TelegramService {
             if (!ctx.text || !this.isValidSolanaAddress(ctx.text)) {
                 try {
                     await ctx.deleteMessage(ctx.session.changeWalletMsg?.message_id);
-                } finally {
+                } catch(_) {} finally {
                     ctx.session.changeWalletMsg = await ctx.reply(
                         "<b>Invalid wallet address. Try again</b>",
                         {
@@ -105,7 +116,7 @@ class TelegramService {
             if (typeof user === "string") {
                 try {
                     await ctx.deleteMessage(ctx.session.changeWalletMsg?.message_id);
-                } finally {
+                } catch(_) {} finally {
                     await this.sendErrorMessage(ctx, user);
                     await ctx.scene.leave();
                     return;
@@ -148,15 +159,216 @@ class TelegramService {
         changeWalletScene.leave(async (ctx) => {
             try {
                 await ctx.deleteMessage(ctx.session.changeWalletMsg?.message_id);
-            } finally {
+            } catch(_) {} finally {
                 return;
             }
         });
-        
+
+        const totalProfitScene = new Scenes.BaseScene<MyContext>("total_profit_scene");
+        totalProfitScene.enter(async (ctx) => {
+            const walletAddress = ctx.session.walletAddress;
+
+            if (walletAddress === undefined) {
+                await ctx.scene.leave();
+                return;
+            }
+
+            if (ctx.session.total_profit === undefined) {
+                ctx.session.total_profit = {};
+            }
+
+            ctx.session.total_profit.sceneMsg = await ctx.reply(
+                "<b>Send the First token address</b>",
+                {
+                    parse_mode: "HTML",
+                    reply_markup: cancelKeyboard
+                }
+            );
+        });
+        totalProfitScene.action("cancel", async (ctx) => {
+            await ctx.scene.leave();
+        });
+        totalProfitScene.on("message", async (ctx) => {
+            if (ctx.session.total_profit === undefined) {
+                await ctx.scene.leave();
+                return;
+            }
+
+            if (ctx.text === undefined) {
+                try { await ctx.deleteMessage(ctx.message.message_id); } catch (_) {}
+                try { await ctx.deleteMessage(ctx.session.total_profit.sceneMsg?.message_id); } catch (_) {}
+                
+                ctx.session.total_profit.sceneMsg = await ctx.reply(
+                    "<b>Invalid token address. Try again</b>",
+                    {
+                        parse_mode: "HTML",
+                        reply_markup: cancelKeyboard
+                    }
+                );
+                
+                return;
+            }
+
+            if (ctx.text.startsWith("/")) {        
+                await ctx.scene.leave();
+                bot.handleUpdate({
+                    update_id: ctx.update.update_id,
+                    message: ctx.update.message
+                });
+                return;
+            }
+
+            if (!this.isValidSolanaAddress(ctx.text)) {
+                try { await ctx.deleteMessage(ctx.message.message_id); } catch (_) {}
+                try { await ctx.deleteMessage(ctx.session.total_profit.sceneMsg?.message_id); } catch (_) {}
+                
+                ctx.session.total_profit.sceneMsg = await ctx.reply(
+                    "<b>Invalid token address. Try again</b>",
+                    {
+                        parse_mode: "HTML",
+                        reply_markup: cancelKeyboard
+                    }
+                );
+                
+                return;
+            }
+
+            try { await ctx.deleteMessage(ctx.message.message_id); } catch (_) {}
+            try { await ctx.deleteMessage(ctx.session.total_profit.sceneMsg?.message_id); } catch (_) {}
+            ctx.session.total_profit.sceneMsg = await ctx.reply(
+                "<b>Loading... Please, wait</b>",
+                {
+                    parse_mode: "HTML",
+                }
+            );
+
+            const walletAddress = ctx.session.walletAddress ?? "";
+
+            ctx.session.total_profit.apiCursor = ctx.session.total_profit.apiCursor ?? "";
+            ctx.session.total_profit.tokens = ctx.session.total_profit.tokens ?? [];
+
+            if (ctx.session.total_profit.firstIndex !== undefined) {
+                ctx.session.total_profit.secondAddress = ctx.text;
+                let secondIndex = -1;
+                while (ctx.session.total_profit.apiCursor.length > 1) {  
+                    secondIndex = ctx.session.total_profit.tokens.findIndex(
+                        token => token.token.token_address === ctx.session.total_profit?.secondAddress
+                    );                    
+    
+                    if (secondIndex === -1) {
+                        let walletData = await this.getRecentPnlTokens(walletAddress, ctx.session.total_profit.apiCursor);
+    
+                        while (walletData === null) {
+                            walletData = await this.getRecentPnlTokens(walletAddress, ctx.session.total_profit.apiCursor);
+                        }
+
+                        ctx.session.total_profit.tokens.push(...walletData.holdings);
+                        ctx.session.total_profit.apiCursor = walletData.next;
+                        continue;
+                    }
+    
+                    ctx.session.total_profit.secondIndex = secondIndex;
+                    break;
+                }
+
+                if (secondIndex === -1 || secondIndex === undefined) {
+                    try { await ctx.deleteMessage(ctx.message.message_id); } catch (_) {};
+                    try { await ctx.deleteMessage(ctx.session.total_profit?.sceneMsg?.message_id); } catch (_) {};
+                    ctx.session.total_profit.sceneMsg = await ctx.reply(
+                        `<b>First address:</b>\n<i>${ctx.session.total_profit.firstAddress}</i>\n\n<b>No such address. Try again</b>`,
+                        {
+                            parse_mode: "HTML",
+                            reply_markup: cancelKeyboard
+                        }
+                    );
+                    return;
+                }
+
+                let totalProfit: any = this.calculateTotalProfitSum(
+                    ctx.session.total_profit.tokens,
+                    ctx.session.total_profit.firstIndex,
+                    secondIndex
+                );
+
+                totalProfit = totalProfit.toFixed(2);
+                totalProfit = totalProfit.startsWith("-") ? `-$${totalProfit.slice(1)}` : `+$${totalProfit}`
+
+                try { await ctx.deleteMessage(ctx.message.message_id); } catch (_) {};
+                try { await ctx.deleteMessage(ctx.session.total_profit?.sceneMsg?.message_id); } catch (_) {};
+                let message = `<b>First address:</b>\n<i>${ctx.session.total_profit.firstAddress}</i>\n\n<b>Second address:</b>\n<i>${ctx.session.total_profit.secondAddress}</i>\n\n`;
+                message += `Total profit:  <b>${totalProfit}</b>`
+
+                await ctx.reply(
+                    message,
+                    {
+                        parse_mode: "HTML",
+                    }
+                );
+                await ctx.scene.leave();
+                return;
+            }
+
+            ctx.session.total_profit.firstAddress = ctx.text;
+            let firstIndex = -1;
+
+            while (ctx.session.total_profit.apiCursor.length > 1) {
+                firstIndex = ctx.session.total_profit.tokens.findIndex(
+                    token => token.token.token_address === ctx.session.total_profit?.firstAddress
+                );
+
+                if (firstIndex === -1) {
+                    let walletData = await this.getRecentPnlTokens(walletAddress, ctx.session.total_profit.apiCursor);
+    
+                    while (walletData === null) {
+                        walletData = await this.getRecentPnlTokens(walletAddress, ctx.session.total_profit.apiCursor);
+                    }
+    
+                    ctx.session.total_profit.tokens.push(...walletData.holdings);
+                    ctx.session.total_profit.apiCursor = walletData.next;
+                    continue;
+                }
+
+                ctx.session.total_profit.firstIndex = firstIndex;
+                break;
+            }
+
+            if (firstIndex === -1 || firstIndex === undefined) {
+                try { await ctx.deleteMessage(ctx.message.message_id); } catch (_) {};
+                try { await ctx.deleteMessage(ctx.session.total_profit?.sceneMsg?.message_id); } catch (_) {};
+                ctx.session.total_profit.sceneMsg = await ctx.reply(
+                    "<b>No such address. Try again</b>",
+                    {
+                        parse_mode: "HTML",
+                        reply_markup: cancelKeyboard
+                    }
+                );
+                return;
+            }
+
+            try { await ctx.deleteMessage(ctx.message.message_id); } catch (_) {};
+            try { await ctx.deleteMessage(ctx.session.total_profit?.sceneMsg?.message_id); } catch (_) {};
+            ctx.session.total_profit.sceneMsg = await ctx.reply(
+                `<b>First address:</b>\n<i>${ctx.session.total_profit.firstAddress}</i>\n\n<b>Send the Second token address</b>`,
+                {
+                    parse_mode: "HTML",
+                    reply_markup: cancelKeyboard
+                }
+            );
+            return;
+        });
+        totalProfitScene.leave(async (ctx) => {
+            try {
+                await ctx.deleteMessage(ctx.message?.message_id);
+            } catch(_) {} finally {
+                ctx.session.total_profit = undefined;
+            }
+        });
+
         const bot = new Telegraf<MyContext>(process.env.TELEGRAM_BOT_API_KEY ?? "");
 
         const stage = new Scenes.Stage<MyContext>([
-            changeWalletScene
+            changeWalletScene,
+            totalProfitScene
         ]);
 
         bot.use(session());
@@ -399,6 +611,39 @@ class TelegramService {
             }
         });
 
+        bot.action("total_profit", async (ctx) => {
+            const walletAddress = ctx.session.walletAddress;
+
+            if (walletAddress === undefined) {
+                await ctx.answerCbQuery("No Wallet data");
+                return;
+            }
+
+            if (ctx.session.total_profit === undefined) {
+                ctx.session.total_profit = {};
+            }
+
+            if (ctx.session.total_profit.tokens === undefined) {
+                const walletData = await this.getRecentPnlTokens(walletAddress);
+
+                if (walletData === null) {
+                    await ctx.answerCbQuery("GMGN API Error. Try again");
+                    return;
+                }
+                
+                if (walletData.holdings.length < 1) {
+                    await ctx.answerCbQuery("No available tokens");
+                    return;
+                }
+
+                ctx.session.total_profit.tokens = walletData.holdings;
+                ctx.session.total_profit.apiCursor = walletData.next;
+            }
+
+            await ctx.answerCbQuery();
+            await ctx.scene.enter("total_profit_scene");
+        });
+
         bot.action("cancel", async (ctx) => {
             ctx.session.tokens = undefined;
             ctx.session.firstSelectedTokenIndex = undefined;
@@ -462,6 +707,23 @@ class TelegramService {
             return null;
         }
     };
+
+    calculateTotalProfitSum = (
+        tokens: GmgnWalletToken[], 
+        startIndex: number, 
+        endIndex: number
+    ) => {
+        if (startIndex > endIndex) {
+            [startIndex, endIndex] = [endIndex, startIndex];
+        }
+    
+        return tokens
+            .slice(startIndex, endIndex + 1)
+            .reduce((sum, token) => {
+                const totalProfit = parseFloat(token.total_profit);
+                return sum + (isNaN(totalProfit) ? 0 : totalProfit);
+            }, 0);
+    }
 }
 
 export default new TelegramService();

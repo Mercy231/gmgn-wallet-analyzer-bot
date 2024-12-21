@@ -4,7 +4,8 @@ import { GmgnWalletToken } from "../../types/Interfaces";
 export const mainKeyboard: InlineKeyboardMarkup = {
     inline_keyboard: [
         [{ text: "Change Wallet", callback_data: "change_wallet" }],
-        [{ text: "Get total profit", callback_data: "get_total_profit_1" }]
+        // [{ text: "Get total profit", callback_data: "get_total_profit_1" }]
+        [{ text: "Get total profit", callback_data: "total_profit" }]
     ]
 };
 
