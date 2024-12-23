@@ -502,7 +502,7 @@ class TelegramService {
                     ctx.session.total_profit.apiCursor = walletData.next;
                 }
     
-                await ctx.answerCbQuery();
+                // await ctx.answerCbQuery();
                 await ctx.scene.enter("total_profit_scene");
             } catch (error: any) {
                 console.error(error);
@@ -533,12 +533,12 @@ class TelegramService {
                     const walletData = await this.getRecentPnlTokens(ctx.session.walletAddress);
     
                     if (!walletData) {
-                        await ctx.answerCbQuery("GMGN API error. Try again");
+                        // await ctx.answerCbQuery("GMGN API error. Try again");
                         return;
                     }
                     
                     if (walletData.holdings.length < 1) {
-                        await ctx.answerCbQuery("No available tokens");
+                        // await ctx.answerCbQuery("No available tokens");
                         return;
                     }
         
@@ -657,7 +657,7 @@ class TelegramService {
                         tokensList = ctx.session.tokens.slice(startIndex);
                         ctx.session.apiCursor = walletData.next;
                     } else {
-                        await ctx.answerCbQuery("GMGN API error. Try again");
+                        // await ctx.answerCbQuery("GMGN API error. Try again");
                         return;
                     }
                 }
@@ -718,12 +718,12 @@ class TelegramService {
                     const walletData = await this.getRecentPnlTokens(walletAddress);
     
                     if (walletData === null) {
-                        await ctx.answerCbQuery("GMGN API Error. Try again");
+                        // await ctx.answerCbQuery("GMGN API Error. Try again");
                         return;
                     }
                     
                     if (walletData.holdings.length < 1) {
-                        await ctx.answerCbQuery("No available tokens");
+                        // await ctx.answerCbQuery("No available tokens");
                         return;
                     }
     
@@ -731,7 +731,7 @@ class TelegramService {
                     ctx.session.total_profit.apiCursor = walletData.next;
                 }
     
-                await ctx.answerCbQuery();
+                // await ctx.answerCbQuery();
                 await ctx.scene.enter("total_profit_scene");
             }  catch (error: any) {
                 console.error(error);
