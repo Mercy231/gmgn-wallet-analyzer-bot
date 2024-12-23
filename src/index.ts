@@ -9,6 +9,8 @@ const main = async () => {
         await database.sync();
 
         TelegramService.start();
+        // console.log(await TelegramService.getRecentPnlTokens("HY6Dp6DjHvHeHsQTSvfdDiRftZb5zDW5hiFX9CnTXpws"));
+        
     } catch (error: unknown) {
         if (error instanceof Error) {
             console.error(error.message);

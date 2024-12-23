@@ -276,12 +276,12 @@ class TelegramService {
                 if (ctx.session.total_profit.firstIndex !== undefined) {
                     ctx.session.total_profit.secondAddress = ctx.text;
                     let secondIndex = -1;
-                    while (ctx.session.total_profit.apiCursor.length > 1) {  
+                    while (ctx.session.total_profit.apiCursor || ctx.session.total_profit.apiCursor === "") {  
                         secondIndex = ctx.session.total_profit.tokens.findIndex(
                             token => token.token.token_address === ctx.session.total_profit?.secondAddress
                         );                    
         
-                        if (secondIndex === -1) {
+                        if (secondIndex === -1 && ctx.session.total_profit.apiCursor.length > 1) {
                             let walletData = await this.getRecentPnlTokens(walletAddress, ctx.session.total_profit.apiCursor);
         
                             while (walletData === null) {
@@ -297,7 +297,7 @@ class TelegramService {
                         break;
                     }
     
-                    if (secondIndex === -1 || secondIndex === undefined) {
+                    if (ctx.session.total_profit.secondIndex === -1 || ctx.session.total_profit.secondIndex === undefined) {
                         try { await ctx.deleteMessage(ctx.message.message_id); } catch (_) {};
                         try { await ctx.deleteMessage(ctx.session.total_profit?.sceneMsg?.message_id); } catch (_) {};
                         ctx.session.total_profit.sceneMsg = await ctx.reply(
@@ -337,12 +337,12 @@ class TelegramService {
                 ctx.session.total_profit.firstAddress = ctx.text;
                 let firstIndex = -1;
     
-                while (ctx.session.total_profit.apiCursor.length > 1) {
+                while (ctx.session.total_profit.apiCursor || ctx.session.total_profit.apiCursor === "") {
                     firstIndex = ctx.session.total_profit.tokens.findIndex(
                         token => token.token.token_address === ctx.session.total_profit?.firstAddress
                     );
     
-                    if (firstIndex === -1) {
+                    if (firstIndex === -1 && ctx.session.total_profit.apiCursor.length > 1) {
                         let walletData = await this.getRecentPnlTokens(walletAddress, ctx.session.total_profit.apiCursor);
         
                         while (walletData === null) {
@@ -358,7 +358,7 @@ class TelegramService {
                     break;
                 }
     
-                if (firstIndex === -1 || firstIndex === undefined) {
+                if (ctx.session.total_profit.firstIndex === -1 || ctx.session.total_profit.firstIndex === undefined) {
                     try { await ctx.deleteMessage(ctx.message.message_id); } catch (_) {};
                     try { await ctx.deleteMessage(ctx.session.total_profit?.sceneMsg?.message_id); } catch (_) {};
                     ctx.session.total_profit.sceneMsg = await ctx.reply(
