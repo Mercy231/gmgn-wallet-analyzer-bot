@@ -768,7 +768,6 @@ class TelegramService {
                 console.error(e);
             }
             console.error("Start method ERROR");
-        } finally {
             await timeout(5000);
             this.start();
         }
