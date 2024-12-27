@@ -183,37 +183,20 @@ class TelegramService {
     
             const totalProfitScene = new Scenes.BaseScene<MyContext>("total_profit_scene");
             totalProfitScene.enter(async (ctx) => {
-                try {
-                    const walletAddress = ctx.session.walletAddress;
-        
-                    if (walletAddress === undefined) {
-                        await ctx.scene.leave();
-                        return;
-                    }
-        
-                    if (ctx.session.total_profit === undefined) {
-                        ctx.session.total_profit = {};
-                    }
-        
-                    ctx.session.total_profit.sceneMsg = await ctx.reply(
-                        "<b>Send the First token address</b>",
-                        {
-                            parse_mode: "HTML",
-                            reply_markup: cancelKeyboard
-                        }
-                    );
-                }  catch (error: any) {
-                    console.error(error);
-                    console.error(error.message);
+                if (ctx.session.total_profit === undefined) {
+                    ctx.session.total_profit = {};
                 }
+    
+                ctx.session.total_profit.sceneMsg = await ctx.reply(
+                    "<b>Send the First token address</b>",
+                    {
+                        parse_mode: "HTML",
+                        reply_markup: cancelKeyboard
+                    }
+                );
             });
             totalProfitScene.action("cancel", async (ctx) => {
-                try {
-                    await ctx.scene.leave();
-                }  catch (error: any) {
-                    console.error(error);
-                    console.error(error.message);
-                }
+                await ctx.scene.leave();
             });
             totalProfitScene.on("message", async (ctx) => {
                 try { 
@@ -274,6 +257,17 @@ class TelegramService {
         
                     ctx.session.total_profit.apiCursor = ctx.session.total_profit.apiCursor ?? "";
                     ctx.session.total_profit.tokens = ctx.session.total_profit.tokens ?? [];
+
+                    if (ctx.session.total_profit.tokens.length < 1) {
+                        let walletData = await this.getRecentPnlTokens(walletAddress);
+            
+                        while (walletData === null) {
+                            walletData = await this.getRecentPnlTokens(walletAddress);
+                        }
+        
+                        ctx.session.total_profit.tokens = walletData.holdings;
+                        ctx.session.total_profit.apiCursor = walletData.next;
+                    }
         
                     if (ctx.session.total_profit.firstIndex !== undefined) {
                         ctx.session.total_profit.secondAddress = ctx.text;
@@ -475,48 +469,20 @@ class TelegramService {
             });
     
             bot.command("total_profit", async (ctx) => {
-                try {
-                    const walletAddress = ctx.session.walletAddress;
+                const walletAddress = ctx.session.walletAddress;
         
-                    if (walletAddress === undefined) {
-                        await ctx.answerCbQuery("No Wallet data");
-                        return;
-                    }
-        
-                    if (ctx.session.total_profit === undefined) {
-                        ctx.session.total_profit = {};
-                    }
-        
-                    if (ctx.session.total_profit.tokens === undefined) {
-                        const walletData = await this.getRecentPnlTokens(walletAddress);
-        
-                        if (walletData === null) {
-                            await ctx.answerCbQuery("GMGN API Error. Try again");
-                            return;
-                        }
-                        
-                        if (walletData.holdings.length < 1) {
-                            await ctx.answerCbQuery("No available tokens");
-                            return;
-                        }
-        
-                        ctx.session.total_profit.tokens = walletData.holdings;
-                        ctx.session.total_profit.apiCursor = walletData.next;
-                    }
-        
-                    // await ctx.answerCbQuery();
-                    await ctx.scene.enter("total_profit_scene");
-                } catch (error: any) {
-                    console.error(error);
-                    console.error(error.message);
+                if (walletAddress === undefined) {
+                    await ctx.reply("<b>Connect your wallet first</b>", {parse_mode: "HTML"});
+                    return;
                 }
+
+                await ctx.scene.enter("total_profit_scene");
             });
     
             bot.action("change_wallet", async (ctx) => {
                 try {
                     ctx.session.tokens = undefined;
                     
-                    await ctx.answerCbQuery();
                     await ctx.scene.enter("change_wallet_scene");
                 }  catch (error: any) {
                     console.error(error);
@@ -524,221 +490,15 @@ class TelegramService {
                 }
             });
     
-            bot.action(/^get_total_profit_\d+(_\d+)?$/, async (ctx) => {
-                try {
-    
-                    if (!ctx.session.walletAddress) {
-                        return;
-                    }
-        
-                    if (ctx.session.tokens === undefined) {
-                        const walletData = await this.getRecentPnlTokens(ctx.session.walletAddress);
-        
-                        if (!walletData) {
-                            // await ctx.answerCbQuery("GMGN API error. Try again");
-                            return;
-                        }
-                        
-                        if (walletData.holdings.length < 1) {
-                            // await ctx.answerCbQuery("No available tokens");
-                            return;
-                        }
-            
-                        ctx.session.tokens = walletData.holdings;
-                        ctx.session.apiCursor = walletData.next;
-                    }
-        
-                    const callbackData = ctx.match[0];
-                    const arrayOfCallbackItems = callbackData.split("_");
-                    const firstNumber = arrayOfCallbackItems[arrayOfCallbackItems.length - 2];
-                    const secondNumber = arrayOfCallbackItems[arrayOfCallbackItems.length - 1];
-                    const isTokenSelected = !isNaN(parseInt(firstNumber));            
-        
-                    if (isTokenSelected) {
-                        const isSecondTokenWasSelected = parseInt(secondNumber[0]);
-                        const tokenIndex = parseInt(secondNumber.slice(1));
-        
-                        if (isSecondTokenWasSelected && ctx.session.firstSelectedTokenIndex !== undefined) {
-                            ctx.session.secondSelectedTokenIndex = tokenIndex;
-        
-                            const firstTokenIndex = ctx.session.firstSelectedTokenIndex;
-                            const secondTokenIndex = tokenIndex;
-        
-                            const selected: GmgnWalletToken[] = [];
-        
-                            ctx.session.tokens.forEach((item, index) => {
-                                if (index < firstTokenIndex || index > secondTokenIndex) {
-                                    return;
-                                }
-        
-                                selected.push(item);
-                            });
-        
-                            const firstToken = ctx.session.tokens[firstTokenIndex]
-                            const secondToken = ctx.session.tokens[secondTokenIndex]
-        
-                            let message = "<b>Selected Tokens:</b>\n\nFrom:\n";
-                            message += `Name: <i>${firstToken.token.name}</i>\n`;
-                            message += `Symbol: <i>${firstToken.token.symbol}</i>\n`;
-                            message += `Total profit: <i>$${parseFloat(firstToken.total_profit).toFixed(2)}</i>`;
-                            message += ` | <i>${(parseFloat(firstToken.total_profit_pnl) * 100).toFixed(2)}%</i>\n\n`;
-        
-                            message += "To:\n";
-                            message += `Name: <i>${secondToken.token.name}</i>\n`;
-                            message += `Symbol: <i>${secondToken.token.symbol}</i>\n`;
-                            message += `Total profit: <i>$${parseFloat(secondToken.total_profit).toFixed(2)}</i>`;
-                            message += ` | <i>${(parseFloat(secondToken.total_profit_pnl) * 100).toFixed(2)}%</i>\n\n`;
-        
-                            let totalProfit = 0;
-                            let totalProfitPnl = 0;
-                            
-                            selected.forEach(item => {                        
-                                totalProfit += parseFloat(item.total_profit);
-                                totalProfitPnl += parseFloat(item.total_profit_pnl) * 100;
-                            });
-        
-                            let totalProfitStr = totalProfit.toFixed(2);
-                            let totalProfitPnlStr = totalProfitPnl.toFixed(2);
-        
-                            if (totalProfitStr[0] !== "-") {
-                                totalProfitStr = "+$" + totalProfitStr;
-                            } else {
-                                totalProfitStr = "-$" + totalProfitStr;
-                            }
-                            if (totalProfitPnlStr[0] !== "-") {
-                                totalProfitPnlStr = "+" + totalProfitPnlStr;
-                            }
-        
-                            message += `Total Profit:  <b>${totalProfitStr}</b>`;
-                            try {
-                                await ctx.editMessageText(
-                                    message,
-                                    {
-                                        parse_mode: "HTML"
-                                    }
-                                );
-                            } catch (_) {}
-        
-                            ctx.session.tokens = undefined;
-                            ctx.session.firstSelectedTokenIndex = undefined;
-                            ctx.session.secondSelectedTokenIndex = undefined;
-                            ctx.session.apiCursor = undefined;
-                            ctx.session.tokensPage = undefined;
-        
-                            return;
-                        } else {
-                            ctx.session.firstSelectedTokenIndex = tokenIndex;
-                        }
-        
-                        ctx.session.tokensPage = 1;
-                    } else {
-                        ctx.session.tokensPage = parseInt(secondNumber);
-                    }
-                    
-                    const pageSize = this.getTotalProfitPageSize
-                    const tokensPage = ctx.session.tokensPage;
-                    let startIndex = (tokensPage - 1) * pageSize;
-                    if (ctx.session.firstSelectedTokenIndex !== undefined) {
-                        startIndex += ctx.session.firstSelectedTokenIndex + 1
-                    }
-                    const endIndex = startIndex + pageSize - 1;
-                    let tokensList: GmgnWalletToken[] = [];
-                    
-                    tokensList = ctx.session.tokens.slice(startIndex);
-        
-                    ctx.session.apiCursor = ctx.session.apiCursor ?? "";
-                    
-                    if (tokensList.length < pageSize && ctx.session.apiCursor.length > 1 && ctx.session.walletAddress) {
-                        const walletData = await this.getRecentPnlTokens(
-                            ctx.session.walletAddress,
-                            ctx.session.apiCursor
-                        );
-                
-                        if (walletData) {
-                            ctx.session.tokens = [...ctx.session.tokens, ...walletData.holdings];
-                            tokensList = ctx.session.tokens.slice(startIndex);
-                            ctx.session.apiCursor = walletData.next;
-                        } else {
-                            // await ctx.answerCbQuery("GMGN API error. Try again");
-                            return;
-                        }
-                    }
-        
-                    let message = "<b>Select first token from the list:</b>\n\n";
-        
-                    tokensList.forEach(item => {
-                        const index = ctx.session.tokens?.indexOf(item);
-                        if (index === undefined || index === -1 || index && index > endIndex) {
-                            return;
-                        }
-        
-                        message += `<b>${index + 1}.</b> Name: <i>${item.token.name}</i>\n`;
-                        message += `  Symbol: <i>${item.token.symbol}</i>\n`;
-                        message += `  Total profit: <i>$${parseFloat(item.total_profit).toFixed(2)}</i>`;
-                        message += ` | <i>${(parseFloat(item.total_profit_pnl) * 100).toFixed(2)}%</i>\n\n`;
-                    });
-        
-                    const msgArgs: MsgArgsType = [
-                        message,
-                        {
-                            parse_mode: "HTML",
-                            reply_markup: getTotalProfitKeyboard(
-                                ctx.session.tokens,
-                                startIndex,
-                                ctx.session.tokensPage,
-                                this.getTotalProfitPageSize,
-                                ctx.session.firstSelectedTokenIndex
-                            )
-                        }
-                    ];
-        
-                    try {
-                        await ctx.editMessageText(...msgArgs);
-                    } catch (_) {
-                        ctx.session.mainMsg = await ctx.reply(...msgArgs);
-                    }
-                }  catch (error: any) {
-                    console.error(error);
-                    console.error(error.message);
-                }
-            });
-    
             bot.action("total_profit", async (ctx) => {
-                try {
-                    const walletAddress = ctx.session.walletAddress;
-        
-                    if (walletAddress === undefined) {
-                        await ctx.answerCbQuery("No Wallet data");
-                        return;
-                    }
-        
-                    if (ctx.session.total_profit === undefined) {
-                        ctx.session.total_profit = {};
-                    }
-        
-                    if (ctx.session.total_profit.tokens === undefined) {
-                        const walletData = await this.getRecentPnlTokens(walletAddress);
-        
-                        if (walletData === null) {
-                            // await ctx.answerCbQuery("GMGN API Error. Try again");
-                            return;
-                        }
-                        
-                        if (walletData.holdings.length < 1) {
-                            // await ctx.answerCbQuery("No available tokens");
-                            return;
-                        }
-        
-                        ctx.session.total_profit.tokens = walletData.holdings;
-                        ctx.session.total_profit.apiCursor = walletData.next;
-                    }
-        
-                    // await ctx.answerCbQuery();
-                    await ctx.scene.enter("total_profit_scene");
-                }  catch (error: any) {
-                    console.error(error);
-                    console.error(error.message);
+                const walletAddress = ctx.session.walletAddress;
+    
+                if (walletAddress === undefined) {
+                    await ctx.answerCbQuery("Connect your Wallet first", {cache_time: 8});
+                    return;
                 }
+                
+                await ctx.scene.enter("total_profit_scene");
             });
     
             bot.action("cancel", async (ctx) => {
